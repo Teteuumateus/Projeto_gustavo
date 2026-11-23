@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Raio de Distância – Barueri/SP</title>
-  <meta name="description" content="Calcule a distância de qualquer endereço até o ponto de referência em Barueri/SP e descubra em qual raio de cobertura ele está.">
+  <title>RAIO DELIVERY – Calculadora de frete</title>
+  <meta name="description" content="Descubra quanto pagar ao motoboy: distância real pela rota das ruas e valor da tabela de preços.">
 
   <!-- Proteção: sem sessão, volta para o login -->
   <script>
@@ -23,7 +23,7 @@
     <div class="brand">
       <span class="brand-icon" aria-hidden="true">◎</span>
       <div>
-        <h1>Raio de Distância</h1>
+        <h1>RAIO DELIVERY</h1>
         <small id="refLabel">Referência: carregando…</small>
       </div>
     </div>
@@ -94,9 +94,11 @@
         <details>
           <summary>Alterar endereço de referência</summary>
           <form id="refForm" class="ref-form">
-            <input id="refInput" type="text" required aria-label="Novo endereço de referência">
+            <input id="refInput" type="text" required aria-label="Novo endereço de referência (endereço ou CEP)"
+                   placeholder="Endereço ou CEP de origem">
             <button class="btn primary" type="submit">Aplicar</button>
           </form>
+          <p id="refCoords" class="note"></p>
         </details>
       </section>
     </aside>

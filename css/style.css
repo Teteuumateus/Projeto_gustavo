@@ -1,5 +1,5 @@
 /* ==========================================================
-   Raio de Distância – Barueri/SP
+   RAIO DELIVERY
    Tema: azul-marinho, painéis com bordas discretas
    ========================================================== */
 :root {
@@ -178,6 +178,23 @@ summary { cursor: pointer; color: var(--blue-2); font-weight: 600; }
   width: 100%; min-width: 0; padding: 6px 8px; border-radius: 6px; font-size: 13px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
+/* Valor a pagar: destaque principal do resultado */
+.price {
+  text-align: center; padding: 18px 12px; margin-bottom: 14px;
+  background: linear-gradient(160deg, #1d4ed8, #3b82f6); border-radius: 12px;
+}
+.price span { display: block; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: #dbeafe; }
+.price b { display: block; font-size: 52px; line-height: 1.15; color: #fff; }
+.price small { display: block; color: #dbeafe; margin: 4px 0 10px; }
+.price.warn { background: #3b1219; border: 1px solid #7f1d2b; }
+.price.warn b { color: #fecaca; }
+.price.warn small { color: #fecaca; }
+.approx { color: #fbbf24; }
+.h-addr small { display: block; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
+.moto-simple { max-width: 560px; width: 100%; margin: 0 auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+.moto-item { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+.moto-item small { display: block; color: var(--muted); }
 .nav { margin-left: auto; display: flex; gap: 8px; }
 .topbar a.btn { text-decoration: none; display: inline-block; }
 .moto-layout { flex: 1; display: flex; min-height: 0; }

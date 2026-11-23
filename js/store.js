@@ -40,6 +40,10 @@ window.Store = (function () {
     addEntrega(e) {
       const d = load(); d.entregas.push({ id: uid(), ...e }); d.lastMoto = e.motoboyId; save(d);
     },
+    /** Lembra o último motoboy escolhido numa consulta. */
+    setLast(id) {
+      const d = load(); d.lastMoto = id || null; save(d);
+    },
     removeEntrega(id) {
       const d = load(); d.entregas = d.entregas.filter(e => e.id !== id); save(d);
     }
