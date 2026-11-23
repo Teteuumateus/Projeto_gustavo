@@ -58,12 +58,20 @@
       </section>
 
       <!-- Tabela de preços de entrega -->
-      <section class="panel">
-        <h2>Tabela do motoboy</h2>
+      <section class="panel" id="feePanel">
+        <h2>Tabela do motoboy
+          <button id="btnEditFees" class="link" type="button">editar</button>
+        </h2>
         <table class="fees">
-          <thead><tr><th>Raio</th><th>Tempo</th><th>Valor</th></tr></thead>
+          <thead><tr><th>Raio (km)</th><th>Tempo (min)</th><th>Valor (R$)</th></tr></thead>
           <tbody id="feeBody"></tbody>
         </table>
+        <div id="feeActions" class="fee-actions" hidden>
+          <button type="button" id="btnFeeAdd" class="btn">+ Faixa</button>
+          <button type="button" id="btnFeeReset" class="btn">Padrão</button>
+          <button type="button" id="btnFeeCancel" class="btn">Cancelar</button>
+          <button type="button" id="btnFeeSave" class="btn primary">Salvar</button>
+        </div>
       </section>
 
       <!-- Bairros e regiões por faixa -->

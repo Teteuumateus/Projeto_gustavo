@@ -172,6 +172,12 @@ summary { cursor: pointer; color: var(--blue-2); font-weight: 600; }
   flex: 1; min-width: 0; padding: 10px; border-radius: 8px; font-size: 14px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
+.fee-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.fee-actions .btn { padding: 8px 12px; font-size: 13px; }
+.fees input.cell {
+  width: 100%; min-width: 0; padding: 6px 8px; border-radius: 6px; font-size: 13px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+}
 .nav { margin-left: auto; display: flex; gap: 8px; }
 .topbar a.btn { text-decoration: none; display: inline-block; }
 .moto-layout { flex: 1; display: flex; min-height: 0; }

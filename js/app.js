@@ -24,13 +24,24 @@
     { max: 5, label: '4 a 5 km',  color: '#dc2626', areas: 'Regiões mais afastadas e municípios adjacentes' }
   ];
   // Tabela de pagamento do motoboy: "max" = distância máxima (km) da faixa, tempo em minutos, valor em R$
-  const FEES = [
+  const FEES_KEY = 'raio-barueri-tabela-motoboy';
+  const DEFAULT_FEES = [
     { max: 0.5, min: 10, fee: 4.99 },  { max: 1,   min: 10, fee: 4.99 },
     { max: 1.5, min: 10, fee: 5.99 },  { max: 2,   min: 10, fee: 5.99 },
     { max: 2.5, min: 10, fee: 6.99 },  { max: 3,   min: 10, fee: 6.99 },
     { max: 3.5, min: 10, fee: 8.99 },  { max: 4,   min: 10, fee: 9.99 },
     { max: 4.5, min: 10, fee: 11.99 }, { max: 5,   min: 10, fee: 11.99 }
   ];
+  /** Tabela em uso: a salva pelo usuário (localStorage) ou a padrão acima. */
+  function loadFees() {
+    try {
+      const s = JSON.parse(localStorage.getItem(FEES_KEY));
+      if (Array.isArray(s) && s.length) return s;
+    } catch { /* usa o padrão */ }
+    return DEFAULT_FEES.map(f => ({ ...f }));
+  }
+  let FEES = loadFees();
+  let feesEditing = false, feesDraft = [];
   const feeFor = (km) => FEES.find(f => km <= f.max) || null;
   const fmtMoney = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const OUT_COLOR = '#64748b';
@@ -384,6 +395,20 @@
 
   /** Tabela de preços; destaca a linha da consulta ativa. */
   function renderFees() {
+    $('btnEditFees').hidden = feesEditing;
+    $('feeActions').hidden = !feesEditing;
+
+    if (feesEditing) {
+      $('feeBody').innerHTML = feesDraft.map((f, i) => `
+        <tr>
+          <td><input type="number" class="cell" data-i="${i}" data-k="max" min="0.1" step="0.5" value="${f.max}" aria-label="Raio (km)"></td>
+          <td><input type="number" class="cell" data-i="${i}" data-k="min" min="0" step="1" value="${f.min}" aria-label="Tempo (min)"></td>
+          <td><input type="number" class="cell" data-i="${i}" data-k="fee" min="0" step="0.01" value="${f.fee}" aria-label="Valor (R$)"></td>
+          <td><button type="button" class="link" data-rm="${i}">remover</button></td>
+        </tr>`).join('');
+      return;
+    }
+
     const item = results.find(r => r.id === activeId);
     const cur = item ? feeFor(measure(item).km) : null;
     $('feeBody').innerHTML = FEES.map(f => `
@@ -463,7 +488,48 @@
   });
 
   // Salvar a entrega ativa no perfil do motoboy escolhido
-  const LEADER_PASS = 'admin'; // senha de líder para salvar uma entrega repetida
+  /* ---- Edição da tabela do motoboy ---- */
+  $('btnEditFees').addEventListener('click', () => {
+    feesDraft = FEES.map(f => ({ ...f }));
+    feesEditing = true; renderFees();
+  });
+
+  $('feePanel').addEventListener('input', (e) => {
+    const c = e.target.closest('input.cell'); if (!c) return;
+    feesDraft[+c.dataset.i][c.dataset.k] = parseFloat(c.value);
+  });
+
+  $('feePanel').addEventListener('click', (e) => {
+    const rm = e.target.closest('[data-rm]');
+    if (rm) { feesDraft.splice(+rm.dataset.rm, 1); renderFees(); return; }
+
+    if (e.target.closest('#btnFeeAdd')) {
+      const last = feesDraft[feesDraft.length - 1];
+      feesDraft.push({ max: last ? last.max + 0.5 : 0.5, min: last ? last.min : 10, fee: last ? last.fee : 0 });
+      renderFees(); return;
+    }
+    if (e.target.closest('#btnFeeCancel')) { feesEditing = false; renderFees(); return; }
+
+    if (e.target.closest('#btnFeeReset')) {
+      if (!confirm('Restaurar a tabela padrão?')) return;
+      feesDraft = DEFAULT_FEES.map(f => ({ ...f })); renderFees(); return;
+    }
+
+    if (e.target.closest('#btnFeeSave')) {
+      const rows = feesDraft.map(f => ({ max: f.max, min: f.min, fee: f.fee }));
+      const bad = rows.some(f => !(f.max > 0) || !(f.min >= 0) || !(f.fee >= 0));
+      if (!rows.length || bad) { showMessage('Preencha raio, tempo e valor de todas as linhas com números válidos.', 'error'); return; }
+      rows.sort((a, b) => a.max - b.max);
+      if (rows.some((f, i) => i && f.max === rows[i - 1].max)) { showMessage('Há dois raios iguais na tabela.', 'error'); return; }
+      FEES = rows;
+      try { localStorage.setItem(FEES_KEY, JSON.stringify(FEES)); } catch { /* ignora */ }
+      feesEditing = false;
+      showMessage('Tabela do motoboy atualizada. As entregas já salvas mantêm o valor da época.', 'info');
+      renderAll(false);
+    }
+  });
+
+  const LEADER_PASS ='admin'; // senha de líder para salvar uma entrega repetida
 
   /** Grava a entrega ativa para o motoboy selecionado. */
   function doSave(item) {
