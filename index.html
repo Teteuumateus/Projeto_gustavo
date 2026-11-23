@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Raio de Distância – Barueri/SP</title>
+  <meta name="description" content="Calcule a distância de qualquer endereço até o ponto de referência em Barueri/SP e descubra em qual raio de cobertura ele está.">
+
+  <!-- Leaflet (mapa interativo) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ============ TOPO: marca + campo de pesquisa ============ -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon" aria-hidden="true">◎</span>
+      <div>
+        <h1>Raio de Distância</h1>
+        <small id="refLabel">Referência: carregando…</small>
+      </div>
+    </div>
+
+    <form id="searchForm" class="search" autocomplete="off">
+      <input id="searchInput" type="text" required
+             placeholder="Rua e número, bairro, cidade, CEP ou endereço completo"
+             aria-label="Endereço a consultar">
+      <button type="submit" id="btnSearch" class="btn primary">Consultar</button>
+      <button type="button" id="btnClear" class="btn">Limpar</button>
+    </form>
+  </header>
+
+  <main class="layout">
+    <!-- ============ MAPA ============ -->
+    <section class="map-wrap">
+      <div id="map" role="application" aria-label="Mapa interativo"></div>
+      <button id="btnCenter" class="btn map-btn" type="button">⌖ Voltar ao ponto central</button>
+    </section>
+
+    <!-- ============ PAINEL LATERAL ============ -->
+    <aside class="sidebar">
+
+      <div id="message" class="message" hidden role="alert"></div>
+
+      <!-- Resultado da consulta -->
+      <section class="panel" id="resultPanel">
+        <h2>Resultado da consulta</h2>
+        <div id="resultBody" class="empty">Digite um endereço e clique em <b>Consultar</b>.</div>
+      </section>
+
+      <!-- Tabela de preços de entrega -->
+      <section class="panel">
+        <h2>Tabela do motoboy</h2>
+        <table class="fees">
+          <thead><tr><th>Raio</th><th>Tempo</th><th>Valor</th></tr></thead>
+          <tbody id="feeBody"></tbody>
+        </table>
+      </section>
+
+      <!-- Bairros e regiões por faixa -->
+      <section class="panel">
+        <h2>Bairros e regiões por faixa</h2>
+        <ul id="zoneList" class="zones"></ul>
+        <p class="note">A tabela é uma referência geral. O bairro real do endereço consultado é obtido dos dados do OpenStreetMap e exibido no resultado.</p>
+      </section>
+
+      <!-- Histórico -->
+      <section class="panel">
+        <h2>Histórico
+          <button id="btnClearHistory" class="link" type="button">apagar</button>
+        </h2>
+        <ul id="historyList" class="history"></ul>
+      </section>
+
+      <!-- Configuração do endereço de referência -->
+      <section class="panel">
+        <details>
+          <summary>Alterar endereço de referência</summary>
+          <form id="refForm" class="ref-form">
+            <input id="refInput" type="text" required aria-label="Novo endereço de referência">
+            <button class="btn primary" type="submit">Aplicar</button>
+          </form>
+        </details>
+      </section>
+    </aside>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
