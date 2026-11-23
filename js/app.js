@@ -171,29 +171,52 @@
    * Respeita o limite de 1 requisição/s do Nominatim.
    */
   async function geocode(text) {
+    // --- 1. Limpa o texto: separa o CEP, troca " - " por vírgula, expande abreviações ---
+    const cepMatch = text.match(/\b\d{5}-?\d{3}\b/);
+    const clean = text.replace(/\b\d{5}-?\d{3}\b/, '')
+      .replace(/\s+[-–—]\s+/g, ', ')
+      .replace(/\bAv\.?(?=\s)/gi, 'Avenida').replace(/\bR\.(?=\s)/gi, 'Rua')
+      .replace(/\bAl\.?(?=\s)/gi, 'Alameda').replace(/\bRod\.?(?=\s)/gi, 'Rodovia')
+      .replace(/\bEstr\.?(?=\s)/gi, 'Estrada').replace(/\bPç?a\.?(?=\s)/gi, 'Praça')
+      .replace(/[,\s]+$/, '').replace(/,\s*,/g, ',').trim();
+
+    // Rua + número (primeiro trecho) e o restante (bairro, cidade...)
+    const parts = clean.split(',').map(s => s.trim()).filter(Boolean);
+    let street = parts[0] || '', number = '';
+    const rest = parts.slice(1);
+    const m = street.match(/^(.*\D)\s+(\d+)$/);
+    if (m) { street = m[1]; number = m[2]; }
+    else if (rest[0] && /^\d+$/.test(rest[0])) { number = rest.shift(); }
+    const restTxt = rest.join(', ');
+    const hasCity = /barueri|santana de parna|osasco|carapicu|itapevi|jandira|s[ãa]o paulo/i.test(restTxt + ' ' + street);
+    const tail = hasCity ? '' : 'Barueri, SP';
+
+    // --- 2. Tentativas, da mais específica à mais ampla ---
     const tries = [];
-    const cep = await resolveCep(text);
+    if (parts.length) {
+      tries.push({ q: clean });
+      if (number) tries.push({ q: [`${street} ${number}`, restTxt, tail].filter(Boolean).join(', ') });
+      tries.push({ q: [street, restTxt, tail].filter(Boolean).join(', '), noNumber: !!number });
+    }
+    const cep = await resolveCep(cepMatch ? cepMatch[0] : text);
     if (cep) {
-      tries.push(`${cep.street}, ${cep.hood}, ${cep.city}, ${cep.uf}`);
-      tries.push(`${cep.street}, ${cep.city}, ${cep.uf}`);
-      tries.push(`${cep.hood}, ${cep.city}, ${cep.uf}`);
-    } else {
-      tries.push(text);
-      // Se o usuário não citou cidade/UF, assume a região de Barueri
-      if (!/barueri|\bsp\b|s[ãa]o paulo/i.test(text)) tries.push(`${text}, Barueri, SP`);
-      // Remove o número e tenta só a rua
-      const noNumber = text.replace(/[,\s]+\d+\s*(?=,|$)/, '');
-      if (noNumber !== text) tries.push(noNumber);
+      tries.push({ q: `${cep.street}, ${cep.hood}, ${cep.city}, ${cep.uf}`, noNumber: true });
+      tries.push({ q: `${cep.hood}, ${cep.city}, ${cep.uf}`, noNumber: true });
     }
 
-    for (let i = 0; i < tries.length; i++) {
-      if (i > 0) await sleep(1100);
-      const hit = await nominatim({ q: tries[i] });
-      if (hit) {
-        // Aproximado = precisou descartar o número da rua (ou, no CEP, a rua/número)
-        const dropped = cep ? i > 0 : (i === tries.length - 1 && i > 0 && !/,\s*Barueri, SP$/.test(tries[i]) || (i > 0 && tries[i] === text.replace(/[,\s]+\d+\s*(?=,|$)/, '')));
-        return { hit, approximate: dropped };
-      }
+    const seen = new Set();
+    let n = 0;
+    for (const t of tries) {
+      if (!t.q || seen.has(t.q)) continue;
+      seen.add(t.q);
+      if (n++ > 0) await sleep(1100);
+      const hit = await nominatim({ q: t.q });
+      if (!hit) continue;
+      // Aproximado: pediu número e o resultado não tem, ou o resultado é uma área (bairro/cidade)
+      const a = hit.address || {};
+      const area = ['suburb', 'neighbourhood', 'quarter', 'city_district', 'city', 'town', 'village', 'municipality', 'state', 'postcode'].includes(hit.addresstype);
+      const approximate = area || !!t.noNumber || (!!number && !a.house_number);
+      return { hit, approximate };
     }
     return null;
   }
@@ -328,12 +351,26 @@
         ? `<div class="delivery"><div><span>Pagar ao motoboy</span><b>${fmtMoney(f.fee)}</b></div>
            <div><span>Tempo</span><b>${f.min} min</b></div></div>`
         : `<div class="delivery out"><span>Sem entrega: fora da área de cobertura</span></div>`; })()}
+      ${feeFor(km) ? saveBlock() : ''}
       <p class="result-row"><span>Distância:</span> ${byRoute ? 'pela rota real (ruas)' : 'em linha reta (rota indisponível)'}</p>
       ${byRoute ? `<p class="result-row"><span>Em linha reta:</span> ${fmtKm(straight)}</p>` : ''}
       <p class="result-row"><span>Faixa:</span> ${zone ? zone.label : 'Acima de ' + MAX_KM + ' km'}</p>
       <p class="result-row"><span>Limite de ${MAX_KM} km:</span> ${zone ? '✅ Dentro' : '❌ Fora'}</p>
       ${place ? `<p class="result-row"><span>Bairro/Região (OpenStreetMap):</span> ${esc(place)}</p>` : ''}
       <p class="result-row"><span>Coordenadas:</span> ${item.lat.toFixed(5)}, ${item.lng.toFixed(5)}</p>`;
+  }
+
+  /** Bloco "salvar entrega no perfil do motoboy". */
+  function saveBlock() {
+    const d = Store.load();
+    if (!d.motoboys.length) {
+      return '<p class="result-row"><a class="link" href="motoboys.html">Cadastre um motoboy</a> para salvar entregas.</p>';
+    }
+    const opts = d.motoboys.map(m =>
+      `<option value="${m.id}" ${m.id === d.lastMoto ? 'selected' : ''}>${esc(m.name)}</option>`).join('');
+    return `<div class="save-box">
+      <select id="selMoto" aria-label="Motoboy">${opts}</select>
+      <button type="button" id="btnSaveDelivery" class="btn primary">Salvar entrega</button></div>`;
   }
 
   function renderZones() {
@@ -423,6 +460,57 @@
   $('btnClear').addEventListener('click', () => {
     input.value = ''; results = []; activeId = null;
     clearMessage(); renderAll(false); goCenter();
+  });
+
+  // Salvar a entrega ativa no perfil do motoboy escolhido
+  const LEADER_PASS = 'admin'; // senha de líder para salvar uma entrega repetida
+
+  /** Grava a entrega ativa para o motoboy selecionado. */
+  function doSave(item) {
+    const motoId = $('selMoto').value;
+    const { km } = measure(item);
+    const f = feeFor(km);
+    if (!motoId || !f) return;
+    Store.addEntrega({
+      motoboyId: motoId, address: item.display, km, fee: f.fee, min: f.min, at: new Date().toISOString()
+    });
+    const name = Store.load().motoboys.find(m => m.id === motoId)?.name || '';
+    const box = $('overrideBox'); if (box) box.remove();
+    showMessage(`Entrega salva para ${name}: ${fmtMoney(f.fee)} (${fmtKm(km)}).`, 'info');
+  }
+
+  $('resultBody').addEventListener('click', (e) => {
+    const item = results.find(r => r.id === activeId);
+    if (!item) return;
+
+    if (e.target.closest('#btnSaveDelivery')) {
+      // Mesmo endereço, no mesmo dia, só pode ser salvo uma vez
+      const today = Store.dayKey(new Date());
+      const d = Store.load();
+      const dup = d.entregas.find(x => x.address === item.display && Store.dayKey(x.at) === today);
+      if (!dup) { doSave(item); return; }
+
+      const who = d.motoboys.find(m => m.id === dup.motoboyId)?.name || 'outro motoboy';
+      const hora = new Date(dup.at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      showMessage(`Já foi salvo: esta entrega está no perfil de ${who} (hoje, ${hora}). Para salvar novamente, informe a senha de líder.`, 'error');
+      if (!$('overrideBox')) {
+        e.target.closest('.save-box').insertAdjacentHTML('afterend',
+          `<div class="save-box" id="overrideBox">
+             <input id="leaderPass" type="password" placeholder="Senha de líder" aria-label="Senha de líder">
+             <button type="button" id="btnOverride" class="btn">Salvar mesmo assim</button></div>`);
+      }
+      return;
+    }
+
+    if (e.target.closest('#btnOverride')) {
+      if ($('leaderPass').value === LEADER_PASS) doSave(item);
+      else showMessage('Senha de líder incorreta.', 'error');
+    }
+  });
+
+  $('btnLogout').addEventListener('click', () => {
+    try { sessionStorage.removeItem('raio-barueri-sessao'); } catch { /* ignora */ }
+    location.replace('login.html');
   });
 
   $('btnClearHistory').addEventListener('click', () => {

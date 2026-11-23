@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Motoboys – Raio de Distância</title>
+
+  <!-- Proteção: sem sessão, volta para o login -->
+  <script>
+    try { if (sessionStorage.getItem('raio-barueri-sessao') !== '1') location.replace('login.html'); }
+    catch (e) { location.replace('login.html'); }
+  </script>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon" aria-hidden="true">🏍</span>
+      <div><h1>Motoboys</h1><small>Entregas e ganhos por dia</small></div>
+    </div>
+    <nav class="nav">
+      <a class="btn" href="index.html">← Mapa e consulta</a>
+      <button type="button" id="btnLogout" class="btn">Sair</button>
+    </nav>
+  </header>
+
+  <main class="moto-layout">
+    <!-- Lista e cadastro -->
+    <aside class="sidebar moto-side">
+      <section class="panel">
+        <h2>Cadastrar motoboy</h2>
+        <form id="motoForm" class="stack">
+          <input id="motoName" type="text" required placeholder="Nome" aria-label="Nome">
+          <input id="motoPhone" type="tel" placeholder="Telefone (opcional)" aria-label="Telefone">
+          <button class="btn primary" type="submit">Adicionar</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>Perfis</h2>
+        <ul id="motoList" class="history"></ul>
+      </section>
+    </aside>
+
+    <!-- Detalhes do motoboy selecionado -->
+    <section class="moto-main">
+      <div id="motoEmpty" class="panel empty">Cadastre um motoboy para começar.</div>
+
+      <div id="motoDetail" hidden>
+        <div class="panel">
+          <div class="moto-head">
+            <div>
+              <h2 id="motoTitle" style="margin:0"></h2>
+              <small id="motoPhoneLabel" class="note"></small>
+            </div>
+            <div class="stack-h">
+              <label for="dayInput" class="note" style="margin:0">Dia</label>
+              <input id="dayInput" type="date" class="date">
+              <button type="button" id="btnRemoveMoto" class="btn">Excluir perfil</button>
+            </div>
+          </div>
+
+          <div class="stats">
+            <div><span>Ganho no dia</span><b id="statTotal">R$ 0,00</b></div>
+            <div><span>Entregas</span><b id="statCount">0</b></div>
+            <div><span>Km rodados</span><b id="statKm">0,00</b></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Entregas do dia</h2>
+          <div class="table-wrap">
+            <table class="fees" id="tblDay">
+              <thead><tr><th>Hora</th><th>Endereço</th><th>Km</th><th>Valor</th><th></th></tr></thead>
+              <tbody id="dayBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Resumo por dia</h2>
+          <div class="table-wrap">
+            <table class="fees">
+              <thead><tr><th>Dia</th><th>Entregas</th><th>Total</th></tr></thead>
+              <tbody id="summaryBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="js/store.js"></script>
+  <script src="js/motoboys.js"></script>
+</body>
+</html>

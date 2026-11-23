@@ -6,6 +6,12 @@
   <title>Raio de Distância – Barueri/SP</title>
   <meta name="description" content="Calcule a distância de qualquer endereço até o ponto de referência em Barueri/SP e descubra em qual raio de cobertura ele está.">
 
+  <!-- Proteção: sem sessão, volta para o login -->
+  <script>
+    try { if (sessionStorage.getItem('raio-barueri-sessao') !== '1') location.replace('login.html'); }
+    catch (e) { location.replace('login.html'); }
+  </script>
+
   <!-- Leaflet (mapa interativo) -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="css/style.css">
@@ -28,6 +34,8 @@
              aria-label="Endereço a consultar">
       <button type="submit" id="btnSearch" class="btn primary">Consultar</button>
       <button type="button" id="btnClear" class="btn">Limpar</button>
+      <a class="btn" href="motoboys.html">🏍 Motoboys</a>
+      <button type="button" id="btnLogout" class="btn">Sair</button>
     </form>
   </header>
 
@@ -87,6 +95,7 @@
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="js/store.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
