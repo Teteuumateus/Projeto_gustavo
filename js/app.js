@@ -57,7 +57,8 @@
   const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
   const STORAGE_KEY = 'raio-barueri-historico';
   const REF_KEY = 'raio-barueri-referencia'; // JSON: { address, lat, lng }
-  const TIMEOUT = 15000;                     // tempo máximo de cada chamada de rede (ms)
+  const HISTORY_MAX = 5;                     // quantas consultas o histórico mostra e guarda
+  const TIMEOUT = 15000;                    // tempo máximo de cada chamada de rede (ms)
 
   /* ---------------- ESTADO ---------------- */
   // ok = referência realmente localizada (sem isso, nenhum cálculo é feito)
@@ -190,8 +191,7 @@
     }).forEach(([k, v]) => url.searchParams.set(k, v));
     const resp = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT) });
     if (!resp.ok) throw new Error('Serviço de geocodificação indisponível (HTTP ' + resp.status + ').');
-    const data = await resp.json();
-    return data[0] || null;
+    return await resp.json(); // lista de resultados (vazia se nada for encontrado)
   }
 
   /** Se o texto for um CEP, consulta o ViaCEP e devolve um endereço textual. */
@@ -204,6 +204,21 @@
       if (d.erro) return null;
       return { street: d.logradouro, hood: d.bairro, city: d.localidade, uf: d.uf };
     } catch { return null; }
+  }
+
+  const plain = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const STREET_TYPE = /^(avenida|rua|alameda|rodovia|estrada|praca|travessa|largo)\s+/i;
+
+  /** Consultas alternativas para uma rua: sem acento, sem tipo da via e com z→s. */
+  function streetVariants(st, city, num) {
+    const p = plain(st), core = p.replace(STREET_TYPE, '');
+    const coreS = core.replace(/z/gi, 's');
+    const out = [];
+    // Com número: tenta primeiro o nome completo (com o tipo da via), que é o que o OSM costuma ter
+    if (num) [...new Set([p, core, coreS])].forEach(n => out.push({ q: `${n} ${num} ${city}`, noNumber: false }));
+    // Sem o número exato = aproximado
+    [...new Set([core, coreS, p])].forEach(n => out.push({ q: `${n} ${city}`, noNumber: true }));
+    return out;
   }
 
   /**
@@ -222,25 +237,35 @@
 
     // Rua + número (primeiro trecho) e o restante (bairro, cidade...)
     const parts = clean.split(',').map(s => s.trim()).filter(Boolean);
+    // Nome de prédio/empresa antes da rua (ex.: "Torre City - Av. Sagitário, 138"): ignora esse trecho
+    const si = parts.findIndex(s => /^(avenida|rua|alameda|rodovia|estrada|praca|travessa|largo)\b/i.test(plain(s)));
+    if (si > 0) parts.splice(0, si);
     let street = parts[0] || '', number = '';
     const rest = parts.slice(1);
     const m = street.match(/^(.*\D)\s+(\d+)$/);
     if (m) { street = m[1]; number = m[2]; }
     else if (rest[0] && /^\d+$/.test(rest[0])) { number = rest.shift(); }
     const restTxt = rest.join(', ');
-    const hasCity = /barueri|santana de parna|osasco|carapicu|itapevi|jandira|s[ãa]o paulo/i.test(restTxt + ' ' + street);
+    const CITY_RE = /barueri|santana de parna|osasco|carapicu|itapevi|jandira|s[ãa]o paulo/i;
+    const hasCity = CITY_RE.test(restTxt + ' ' + street);
     const tail = hasCity ? '' : 'Barueri, SP';
+    const cityName = rest.find(s => CITY_RE.test(s)) || 'Barueri';   // só a cidade, sem o bairro
+    const userHood = rest.find(s => !CITY_RE.test(s) && !/^[A-Za-z]{2}$/.test(s)) || ''; // bairro digitado
 
     // --- 2. Tentativas, da mais específica à mais ampla ---
     const tries = [];
     if (parts.length) {
-      tries.push({ q: clean });
+      tries.push({ q: parts.join(', ') });
       if (number) tries.push({ q: [`${street} ${number}`, restTxt, tail].filter(Boolean).join(', ') });
       tries.push({ q: [street, restTxt, tail].filter(Boolean).join(', '), noNumber: !!number });
+      // Variantes sem acento / sem o tipo da via (o OSM às vezes grafa o nome diferente)
+      tries.push(...streetVariants(street, cityName, number));
     }
     const cep = await resolveCep(cepMatch ? cepMatch[0] : text);
     if (cep) {
       tries.push({ q: `${cep.street}, ${cep.hood}, ${cep.city}, ${cep.uf}`, noNumber: true });
+      // A rua do CEP pode estar no OSM com outra grafia (ex.: "Cézar" x "César", Avenida x Rua)
+      if (cep.street) tries.push(...streetVariants(cep.street, cep.city, ''));
       tries.push({ q: `${cep.hood}, ${cep.city}, ${cep.uf}`, noNumber: true });
     }
 
@@ -250,13 +275,28 @@
       if (!t.q || seen.has(t.q)) continue;
       seen.add(t.q);
       if (n++ > 0) await sleep(1100);
-      const hit = await nominatim({ q: t.q });
-      if (!hit) continue;
+      const hits = await nominatim({ q: t.q, limit: 5 });
+      if (!hits.length) continue;
+      // Ruas longas aparecem em vários trechos: prefere o do CEP e, depois, o do bairro informado
+      const wantCep = cepMatch ? cepMatch[0].replace(/\D/g, '') : '';
+      const wantHood = plain((cep ? cep.hood : userHood) || '').toLowerCase();
+      const hoodOk = (h) => !!wantHood && plain(neighborhoodOf(h)).toLowerCase().includes(wantHood);
+      // Pontuação: CEP igual > bairro igual > mesmo número de casa (o primeiro vence em empate)
+      const score = (h) => {
+        const a = h.address || {};
+        return (wantCep && (a.postcode || '').replace(/\D/g, '') === wantCep ? 4 : 0) +
+               (hoodOk(h) ? 2 : 0) + (number && a.house_number === number ? 1 : 0);
+      };
+      const hit = hits.reduce((best, h) => (score(h) > score(best) ? h : best), hits[0]);
       // Aproximado: pediu número e o resultado não tem, ou o resultado é uma área (bairro/cidade)
       const a = hit.address || {};
       const area = ['suburb', 'neighbourhood', 'quarter', 'city_district', 'city', 'town', 'village', 'municipality', 'state', 'postcode'].includes(hit.addresstype);
       const approximate = area || !!t.noNumber || (!!number && !a.house_number);
-      return { hit, approximate };
+      // Número achado, mas em outro bairro que o informado: avisa para conferir o pino
+      const note = (number && a.house_number === number && wantHood && !hoodOk(hit))
+        ? `O número ${number} foi encontrado em ${neighborhoodOf(hit) || 'outro bairro'}, e não em ${userHood || cep.hood}. Confira o pino no mapa.`
+        : '';
+      return { hit, approximate, note };
     }
     return null;
   }
@@ -312,7 +352,7 @@
         showMessage('Endereço não encontrado. Confira a grafia ou informe também o bairro e a cidade.', 'error');
         return;
       }
-      const { hit, approximate } = found;
+      const { hit, approximate, note } = found;
       const item = {
         id: Date.now(),
         query: text,
@@ -320,24 +360,51 @@
         lat: parseFloat(hit.lat), lng: parseFloat(hit.lon),
         hood: neighborhoodOf(hit), city: cityOf(hit),
         cep: (hit.address && hit.address.postcode) || '',
-        approximate,
+        approximate, note,
         motoId: lastMotoId()
       };
       await fetchRoute(item);
-      results.push(item);
+      results = [item];   // o mapa mostra só a consulta atual (as anteriores ficam no histórico)
       activeId = item.id;
       addHistory(item);
       renderAll(true);
       if (item.routeKm == null) {
         showMessage('Endereço localizado, mas não foi possível calcular a rota pelas ruas agora. O valor não pode ser definido; tente novamente.', 'error');
-      } else if (approximate) {
-        showMessage('Localização aproximada: não foi possível localizar o número exato (posição de rua/bairro).', 'info');
+      } else {
+        showMessage(distanceMessage(item), 'info', true);
       }
     } catch (err) {
       showMessage('Erro ao consultar: ' + (err.name === 'TimeoutError' ? 'tempo esgotado, tente novamente.' : err.message), 'error');
     } finally {
       btnSearch.disabled = false; btnSearch.textContent = 'Consultar';
     }
+  }
+
+  /** Aviso no topo do painel: aproximação (se houver) + as duas distâncias. */
+  function distanceMessage(item) {
+    const m = measure(item);
+    const q = item.query.replace(/\D/g, '');
+    const isCep = /^\d{8}$/.test(item.query.trim().replace('-', ''));
+
+    const title = item.approximate
+      ? '<div class="notice-title warn">⚠ Localização aproximada</div>'
+      : '<div class="notice-title ok">✓ Endereço localizado</div>';
+
+    let text = '';
+    if (item.approximate) {
+      text = isCep
+        ? `O CEP <b>${q.slice(0, 5)}-${q.slice(5)}</b> não informa o número da casa, só a rua e o bairro. ` +
+          'Usamos o ponto da rua no mapa. Informe o endereço com número para o valor exato.'
+        : 'O número informado não foi encontrado no mapa. Usamos o ponto da rua ou do bairro.';
+      text = `<p class="notice-text">${text}</p>`;
+    }
+    if (item.note) text += `<p class="notice-text">${esc(item.note)}</p>`;
+
+    return `${title}${text}
+      <div class="dist-grid">
+        <div><span>Distância real (rota)</span><b>${fmtKm(m.km)}</b></div>
+        <div><span>Em linha reta</span><b>${fmtKm(m.straight)}</b></div>
+      </div>`;
   }
 
   /** Último motoboy escolhido, se ainda existir. */
@@ -376,9 +443,13 @@
 
       const marker = L.marker([item.lat, item.lng], {
         icon: pinIcon(color, '●'), zIndexOffset: isActive ? 900 : 500
-      }).bindPopup(`<b>${byRoute ? fmtKm(km) : 'Rota indisponível'}</b><br>${esc(item.display)}`).addTo(resultLayer);
+      })
+        // Etiqueta fixa com os km sobre o pino (sempre visível, não corta na borda do mapa)
+        .bindTooltip(byRoute ? fmtKm(km) : 'Sem rota', { permanent: true, direction: 'top', offset: [0, -16], className: 'km-tip' })
+        .bindPopup(`<b>${byRoute ? fmtKm(km) : 'Rota indisponível'}</b><br>${esc(item.display)}`,
+                   { autoPanPadding: [40, 40], maxWidth: 260 })
+        .addTo(resultLayer);
       marker.on('click', () => { activeId = item.id; renderResult(); renderZones(); renderFees(); renderMap(false); });
-      if (isActive) { marker.openPopup(); }
 
       if (isActive || fit) bounds.extend([item.lat, item.lng]);
     });
@@ -418,6 +489,7 @@
       ${price}
       <p class="result-row"><span>Endereço:</span> ${esc(item.display)}</p>
       ${item.approximate ? '<p class="result-row approx">⚠ Localização aproximada</p>' : ''}
+      ${item.note ? `<p class="result-row approx">⚠ ${esc(item.note)}</p>` : ''}
       <p class="result-row"><span>Distância real (pela rota):</span> <b>${byRoute ? fmtKm(km) : 'indisponível'}</b></p>
       <p class="result-row"><span>Distância em linha reta:</span> ${fmtKm(straight)}</p>
       <p class="result-row"><span>Bairro:</span> ${place ? esc(place) : 'não identificado'}</p>
@@ -479,7 +551,7 @@
     const ul = $('historyList');
     if (!history.length) { ul.innerHTML = '<li class="empty">Nenhuma consulta ainda.</li>'; return; }
     const motoboys = Store.load().motoboys;
-    ul.innerHTML = history.map((h, i) => {
+    ul.innerHTML = history.slice(0, HISTORY_MAX).map((h, i) => {
       const when = h.at ? new Date(h.at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
       const who = motoboys.find(m => m.id === h.motoId)?.name;
       const dist = h.routeKm != null ? fmtKm(h.routeKm) : '—';
@@ -504,12 +576,12 @@
     const m = measure(item);
     const rec = {
       query: item.query, display: item.display, lat: item.lat, lng: item.lng,
-      hood: item.hood, city: item.city, cep: item.cep, approximate: item.approximate,
+      hood: item.hood, city: item.city, cep: item.cep, approximate: item.approximate, note: item.note || '',
       routeKm: item.routeKm ?? null, straight: m.straight,
       fee: m.row ? m.row.fee : null,
       at: new Date().toISOString(), motoId: item.motoId || ''
     };
-    history = [rec, ...history.filter(h => h.display !== item.display)].slice(0, 50);
+    history = [rec, ...history.filter(h => h.display !== item.display)].slice(0, HISTORY_MAX);
     saveHistory();
   }
 
@@ -518,8 +590,13 @@
   function esc(s) {
     return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
-  function showMessage(text, type) {
-    const el = $('message'); el.textContent = text; el.className = 'message ' + type; el.hidden = false;
+  /** Mostra um aviso no topo do painel. Com html = true, "text" já é HTML seguro (montado aqui). */
+  function showMessage(text, type, html) {
+    const el = $('message');
+    if (html) el.innerHTML = text; else el.textContent = text;
+    el.className = 'message ' + type + (html ? ' rich' : '');
+    el.hidden = false;
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); // garante que o aviso apareça mesmo com o painel rolado
   }
   function clearMessage() { $('message').hidden = true; }
 
@@ -544,7 +621,11 @@
       if (found.approximate) showMessage('Referência localizada de forma aproximada (sem o número exato). Confira no mapa.', 'info');
       else if (!silent) showMessage('Endereço de referência atualizado.', 'info');
     } catch {
-      if (!silent) { showMessage('Não foi possível localizar o novo endereço de referência. A anterior foi mantida.', 'error'); return; }
+      if (!silent) {
+        showMessage('Não foi possível localizar o novo endereço de referência. A anterior foi mantida.', 'error');
+        $('refCoords').textContent = '⚠ Endereço não localizado. Tente: rua, número, cidade (ex.: Avenida Sagitário 138, Barueri). A referência anterior foi mantida.';
+        return;
+      }
       reference = { address, lat: MAP_START.lat, lng: MAP_START.lng, ok: false };
       drawRings(); renderAll(false);
       showMessage('Não foi possível localizar o endereço de referência. Informe-o em "Alterar endereço de referência"; sem ele não há cálculo.', 'error');
@@ -688,17 +769,17 @@
     if (!reference.ok) { showMessage('O endereço de referência não foi localizado.', 'error'); return; }
     const item = {
       id: Date.now(), query: h.query, display: h.display, lat: h.lat, lng: h.lng,
-      hood: h.hood, city: h.city, cep: h.cep, approximate: h.approximate, motoId: h.motoId || '',
+      hood: h.hood, city: h.city, cep: h.cep, approximate: h.approximate, note: h.note || '', motoId: h.motoId || '',
       prev: h.fee != null ? { fee: h.fee, routeKm: h.routeKm, at: h.at } : null
     };
     await fetchRoute(item);
-    results = results.filter(r => r.display !== h.display);
-    results.push(item);
+    results = [item];
     activeId = item.id;
     input.value = h.query;
     clearMessage();
     renderAll(true);
     if (item.routeKm == null) showMessage('Não foi possível calcular a rota agora. Tente novamente.', 'error');
+    else showMessage(distanceMessage(item), 'info', true);
   });
 
   function goCenter() { map.setView([reference.lat, reference.lng], 14); }

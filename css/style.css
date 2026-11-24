@@ -89,7 +89,17 @@ input:focus { outline: 2px solid var(--blue); border-color: transparent; }
 .link:hover { color: var(--text); text-decoration: underline; }
 
 /* ---------- Mensagens ---------- */
-.message { padding: 12px 14px; border-radius: 10px; font-size: 14px; }
+.message { padding: 12px 14px; border-radius: 10px; font-size: 14px; white-space: pre-line; }
+/* Aviso organizado: título, texto curto e as duas distâncias lado a lado */
+.message.rich { white-space: normal; padding: 14px; }
+.notice-title { font-weight: 800; font-size: 15px; margin-bottom: 6px; }
+.notice-title.warn { color: #fbbf24; }
+.notice-title.ok { color: #4ade80; }
+.notice-text { margin: 0 0 10px; color: var(--text); font-size: 13px; line-height: 1.45; }
+.dist-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.dist-grid > div { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.dist-grid span { display: block; font-size: 11px; color: var(--muted); }
+.dist-grid b { font-size: 18px; color: #fff; }
 .message.error { background: #3b1219; border: 1px solid #7f1d2b; color: #fecaca; }
 .message.info  { background: #10294a; border: 1px solid var(--border); color: var(--blue-2); }
 
@@ -159,6 +169,12 @@ summary { cursor: pointer; color: var(--blue-2); font-weight: 600; }
   text-shadow: 0 0 3px #000, 0 0 3px #000;
 }
 .ring-label::before { display: none; }
+.km-tip {
+  background: var(--blue); color: #fff; border: 2px solid #fff;
+  border-radius: 8px; font-weight: 800; font-size: 13px; padding: 2px 8px;
+  box-shadow: 0 2px 6px #0009;
+}
+.km-tip::before { display: none; }
 .leaflet-popup-content-wrapper { background: var(--panel); color: var(--text); }
 .leaflet-popup-tip { background: var(--panel); }
 
